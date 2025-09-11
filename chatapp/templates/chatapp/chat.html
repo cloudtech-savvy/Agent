@@ -1,0 +1,30 @@
+{% extends "chatapp/base.html" %}
+
+{% block title %}Chatweb App{% endblock %}
+
+{% block head %}
+{% load static %}
+<link rel="stylesheet" href="{% static 'chatapp/css/chat.css' %}">
+
+{% endblock %}
+
+{% block content %}
+<div class="chat-container">
+    <div class="header">
+        <span class="logo-circle">🤖</span>
+        Chatweb app <span class="version">v1.0</span>
+    </div>
+    <div class="messages" id="messages"></div>
+    <form class="input-row" id="chat-form" autocomplete="off">
+        <input type="text" id="user-input" placeholder="Type your message..." required autocomplete="off" />
+        <button type="submit" class="send-btn" aria-label="Send">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="12" fill="#2e89ff"/>
+                <path d="M8 12h8M14 8l4 4-4 4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
+    </form>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="{% static 'chatapp/js/chat.js' %}"></script>
+{% endblock %}

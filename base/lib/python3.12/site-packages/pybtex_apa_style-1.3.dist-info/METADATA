@@ -1,0 +1,21 @@
+Metadata-Version: 2.1
+Name: pybtex-apa-style
+Version: 1.3
+Summary: Pybtex APA-like style
+Home-page: https://github.com/naeka/pybtex-apa-style
+Author: Naeka
+Author-email: contact@naeka.fr
+License: UNKNOWN
+Platform: UNKNOWN
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 2.7
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Text Processing :: Markup
+Classifier: Topic :: Utilities
+
+UNKNOWN
+
+
