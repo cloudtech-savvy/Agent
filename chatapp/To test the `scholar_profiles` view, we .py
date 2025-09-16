@@ -1,0 +1,1 @@
+To test the `scholar_profiles` view, we will create a `chatapp/test_views.py` file that mocks the `schol

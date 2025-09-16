@@ -1,11 +1,16 @@
+from urllib import response
 from django.shortcuts import render
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
 import os
 import requests
 from openai import OpenAI
 from scholarly import scholarly
+import csv
+import logging
+
+
 
 def chat_view(request):
     return render(request, 'chatapp/chat.html')
@@ -50,32 +55,77 @@ def chat_api(request):
 
 # --------------- # For Google Scholar scraping-------------
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
 
 def scholar_profiles(request):
-    query = request.GET.get('university', 'The Catholic University of America')
+    response = request.GET.get('ViewIt@CatholicU', '').strip()
+    if not response:
+        return JsonResponse({'error': 'University query parameter is required.'}, status=400)
+
+    file_format = request.GET.get('format', 'json').lower()
     results = []
-    search_query = scholarly.search_author(query)
-    for author in search_query:
-        profile = {
-            'name': author.get('name'),
-            'affiliation': author.get('affiliation'),
-            'interests': author.get('interests'),
-            'scholar_id': author.get('scholar_id'),
-            'email_domain': author.get('email_domain'),
-        }
-        # Fill author to get publications
-        author_filled = scholarly.fill(author)
-        publications = []
-        for pub in author_filled.get('publications', []):
-            pub_info = pub.get('bib', {})
-            publications.append({
-                'title': pub_info.get('title'),
-                'year': pub_info.get('pub_year'),
-                'venue': pub_info.get('venue'),
-            })
-        profile['publications'] = publications
-        results.append(profile)
-        # Limit to first 3 authors for demo purposes
-        if len(results) >= 3:
-            break
+    logger.info(f"Searching for authors with query: {response}")
+
+    try:
+        search_query = scholarly.search_author(response)
+        authors_found = list(search_query)
+        if not authors_found:
+            logger.warning(f"No authors found for query: {response}")
+            return JsonResponse({'error': 'No authors found for the given query.'}, status=404)
+
+        for author in authors_found:
+            profile = {
+                'name': author.get('name'),
+                'affiliation': author.get('affiliation'),
+                'interests': author.get('interests'),
+                'scholar_id': author.get('scholar_id'),
+                'email_domain': author.get('email_domain'),
+            }
+            # Fill author to get publications
+            author_filled = scholarly.fill(author)
+            publications = []
+            for pub in author_filled.get('publications', []):
+                pub_info = pub.get('bib', {})
+                publications.append({
+                    'title': pub_info.get('title'),
+                    'year': pub_info.get('pub_year'),
+                    'venue': pub_info.get('venue'),
+                    'citations': pub.get('num_citations', 0),
+                })
+            profile['publications'] = publications
+            results.append(profile)
+            # Limit to first 2 authors for demo purposes
+            if len(results) >= 2:
+                break
+    except Exception as e:
+        return JsonResponse({'error': f'Failed to fetch data: {str(e)}'}, status=500)
+
+    if file_format == 'csv':
+        # Create CSV response
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{response}_researchers.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['Name', 'Affiliation', 'Interests', 'Scholar ID', 'Email Domain', 'Publication Title', 'Year', 'Venue', 'Citations'])
+        for profile in results:
+            for pub in profile['publications']:
+                writer.writerow([
+                    profile['name'],
+                    profile['affiliation'],
+                    ', '.join(profile['interests']),
+                    profile['scholar_id'],
+                    profile['email_domain'],
+                    pub['title'],
+                    pub['year'],
+                    pub['venue'],
+                    pub['citations'],
+                ])
+        return response
+
+    # Default to JSON response
     return JsonResponse({'results': results})
+
+# --------------- # End of Google Scholar scraping-------------
+
