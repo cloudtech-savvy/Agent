@@ -40,3 +40,21 @@ class ScholarProfilesTestCase(TestCase):
                         "venue": "NLP Conference"
                     }
                 },
+            ]
+        }.get(key)
+        mock_fill.return_value = mock_filled_author 
+        # Make GET request to the endpoint
+        response = self.client.get('/api/scholar/', {'ViewIt@CatholicU': 'The Catholic University of America', 'format': 'json'})
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertIn('results', data)
+        self.assertEqual(len(data['results']), 1)
+        author = data['results'][0]
+        self.assertEqual(author['name'], "Dr. John Doe")
+        self.assertEqual(author['affiliation'], "The Catholic University of America")
+        self.assertEqual(author['scholar_id'], "12345")
+        self.assertEqual(len(author['publications']), 2)
+        self.assertEqual(author['publications'][0]['title'], "Deep Learning Models")
+        self.assertEqual(author['publications'][1]['title'], "Natural Language Processing")
+        # Test CSV format
+    

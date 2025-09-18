@@ -9,6 +9,7 @@ from openai import OpenAI
 from scholarly import scholarly
 import csv
 import logging
+from django.template.loader import render_to_string
 
 
 
@@ -53,79 +54,78 @@ def chat_api(request):
         return JsonResponse({'reply': bot_reply})
     return JsonResponse({'error': 'Invalid request'}, status=400)
 
-# --------------- # For Google Scholar scraping-------------
 
-logging.basicConfig(level=logging.INFO)
+
+
+
+
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+#try semantic scholar api
+
+import requests
+import urllib.parse
+
+# Function to search authors by affiliation
+def search_authors_by_affiliation(affiliation, limit=10):
+    encoded_affiliation = urllib.parse.quote(affiliation)
+    url = f"https://api.semanticscholar.org/graph/v1/author/search?query={encoded_affiliation}&limit={limit}&fields=name,affiliations,paperCount,hIndex,url"
+
+    response = requests.get(url)
+    if response.status_code != 200:
+        print(f"Error: {response.status_code}")
+        return []
+    
+    data = response.json()
+    return data.get("data", [])
 
 
+# Function to fetch latest papers by author ID
+def get_latest_papers(author_id, limit=5):
+    url = f"https://api.semanticscholar.org/graph/v1/author/{author_id}/papers?limit={limit}&fields=title,year,venue,url"
+    response = requests.get(url)
+    if response.status_code != 200:
+        print(f"Error fetching papers for {author_id}: {response.status_code}")
+        return []
+    
+    data = response.json()
+    return data.get("data", [])
 
+
+@csrf_exempt
 def scholar_profiles(request):
-    response = request.GET.get('ViewIt@CatholicU', '').strip()
-    if not response:
-        return JsonResponse({'error': 'University query parameter is required.'}, status=400)
-
-    file_format = request.GET.get('format', 'json').lower()
-    results = []
-    logger.info(f"Searching for authors with query: {response}")
-
-    try:
-        search_query = scholarly.search_author(response)
-        authors_found = list(search_query)
-        if not authors_found:
-            logger.warning(f"No authors found for query: {response}")
-            return JsonResponse({'error': 'No authors found for the given query.'}, status=404)
-
-        for author in authors_found:
-            profile = {
-                'name': author.get('name'),
-                'affiliation': author.get('affiliation'),
-                'interests': author.get('interests'),
-                'scholar_id': author.get('scholar_id'),
-                'email_domain': author.get('email_domain'),
-            }
-            # Fill author to get publications
-            author_filled = scholarly.fill(author)
-            publications = []
-            for pub in author_filled.get('publications', []):
-                pub_info = pub.get('bib', {})
-                publications.append({
-                    'title': pub_info.get('title'),
-                    'year': pub_info.get('pub_year'),
-                    'venue': pub_info.get('venue'),
-                    'citations': pub.get('num_citations', 0),
+    if request.method == 'GET':
+        university = request.GET.get('ViewIt@CatholicU', '').strip()
+        if not university:
+            return JsonResponse({'error': 'University query parameter is required.'}, status=400)
+        limit = int(request.GET.get('limit', 5))
+        authors = search_authors_by_affiliation(university, limit=limit)
+        results = []
+        for author in authors:
+            name = author.get("name")
+            affils = author.get("affiliations", [])
+            papers_count = author.get("paperCount")
+            hindex = author.get("hIndex")
+            profile_url = author.get("url")
+            author_id = author.get("authorId")
+            # Fetch latest papers
+            latest_pubs = get_latest_papers(author_id, limit=3)
+            pubs = []
+            for pub in latest_pubs:
+                pubs.append({
+                    'title': pub.get('title'),
+                    'year': pub.get('year'),
+                    'venue': pub.get('venue'),
+                    'url': pub.get('url'),
                 })
-            profile['publications'] = publications
-            results.append(profile)
-            # Limit to first 2 authors for demo purposes
-            if len(results) >= 2:
-                break
-    except Exception as e:
-        return JsonResponse({'error': f'Failed to fetch data: {str(e)}'}, status=500)
-
-    if file_format == 'csv':
-        # Create CSV response
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="{response}_researchers.csv"'
-        writer = csv.writer(response)
-        writer.writerow(['Name', 'Affiliation', 'Interests', 'Scholar ID', 'Email Domain', 'Publication Title', 'Year', 'Venue', 'Citations'])
-        for profile in results:
-            for pub in profile['publications']:
-                writer.writerow([
-                    profile['name'],
-                    profile['affiliation'],
-                    ', '.join(profile['interests']),
-                    profile['scholar_id'],
-                    profile['email_domain'],
-                    pub['title'],
-                    pub['year'],
-                    pub['venue'],
-                    pub['citations'],
-                ])
-        return response
-
-    # Default to JSON response
-    return JsonResponse({'results': results})
-
-# --------------- # End of Google Scholar scraping-------------
-
+            results.append({
+                'name': name,
+                'affiliations': affils,
+                'paperCount': papers_count,
+                'hIndex': hindex,
+                'profile_url': profile_url,
+                'papers': pubs
+            })
+        return JsonResponse({'results': results})
+    return JsonResponse({'error': 'Invalid request'}, status=400)

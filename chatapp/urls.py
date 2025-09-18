@@ -1,5 +1,3 @@
-
-
 from django.urls import path
 from .views import chat_view, chat_api, scholar_profiles
 
