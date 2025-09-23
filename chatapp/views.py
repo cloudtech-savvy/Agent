@@ -10,6 +10,7 @@ from scholarly import scholarly
 import csv
 import logging
 from django.template.loader import render_to_string
+from bs4 import BeautifulSoup
 
 
 
@@ -62,70 +63,85 @@ def chat_api(request):
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-#try semantic scholar api
-
+#########################################################
 import requests
-import urllib.parse
+from bs4 import BeautifulSoup
 
-# Function to search authors by affiliation
-def search_authors_by_affiliation(affiliation, limit=10):
-    encoded_affiliation = urllib.parse.quote(affiliation)
-    url = f"https://api.semanticscholar.org/graph/v1/author/search?query={encoded_affiliation}&limit={limit}&fields=name,affiliations,paperCount,hIndex,url"
+# Step 1: Get your API key from the ScraperAPI dashboard
+API_KEY = os.environ.get('SCRAPERAPI_KEY')
 
-    response = requests.get(url)
-    if response.status_code != 200:
-        print(f"Error: {response.status_code}")
-        return []
+# Step 2: Define the target URL for your search
+# This example searches for authors affiliated with the Catholic University of America
+target_url = 'https://scholar.google.com/scholar?q=mauthors:%22Catholic+University+of+America%22'
+
+# Step 3: Construct the ScraperAPI request URL
+scraperapi_url = f'http://api.scraperapi.com?api_key={API_KEY}&url={target_url}'
+
+try:
+    # Send the request through ScraperAPI
+    response = requests.get(scraperapi_url)
+    response.raise_for_status()  # Raise an exception for bad status codes
+
+    # Use BeautifulSoup to parse the HTML content
+    soup = BeautifulSoup(response.text, 'html.parser')
+
+    # Example parsing: Find all researcher profiles on the page
+    # The structure might change, so this is an example
+    profile_sections = soup.find_all('div', class_='gs_scl')
+
+    if not profile_sections:
+        print("No researcher profiles found. The selector might have changed.")
+
+    for profile in profile_sections:
+        # Extract the researcher's name
+        name_tag = profile.find('h3', class_='gs_ai_name')
+        name = name_tag.text.strip() if name_tag else 'Name not found'
+
+        # Extract the researcher's affiliation
+        affiliation_tag = profile.find('div', class_='gs_ai_aff')
+        affiliation = affiliation_tag.text.strip() if affiliation_tag else 'Affiliation not found'
+        
+        # Extract paper descriptions (you may need to get the user profile for full details)
+        # This is an example of scraping paper snippets from the search results
+        paper_snippets = profile.find_all('div', class_='gs_a')
+        paper_desc = [s.text.strip() for s in paper_snippets] if paper_snippets else ['No paper snippets found']
+
+        print(f"Researcher: {name}")
+        print(f"Affiliation: {affiliation}")
+        print(f"Paper Snippets: {paper_desc}")
+        print("-" * 20)
+
+except requests.exceptions.RequestException as e:
+    print(f"An error occurred: {e}")
+
+
+# ... (Continuing from the previous example)
+
+# Assuming you have the URL for a specific researcher's profile
+# You would get this URL by parsing the initial search result
+researcher_id = 'INSERT_RESEARCHER_ID_HERE'  # Replace with actual ID
+profile_url = f'https://scholar.google.com/citations?user={researcher_id}'
+
+# Make a new request using ScraperAPI
+profile_scraperapi_url = f'http://api.scraperapi.com?api_key={API_KEY}&url={profile_url}'
+profile_response = requests.get(profile_scraperapi_url)
+
+if profile_response.status_code == 200:
+    profile_soup = BeautifulSoup(profile_response.text, 'html.parser')
     
-    data = response.json()
-    return data.get("data", [])
-
-
-# Function to fetch latest papers by author ID
-def get_latest_papers(author_id, limit=5):
-    url = f"https://api.semanticscholar.org/graph/v1/author/{author_id}/papers?limit={limit}&fields=title,year,venue,url"
-    response = requests.get(url)
-    if response.status_code != 200:
-        print(f"Error fetching papers for {author_id}: {response.status_code}")
-        return []
+    # Example parsing: Find all articles on the profile page
+    articles = profile_soup.find_all('tr', class_='gsc_a_tr')
     
-    data = response.json()
-    return data.get("data", [])
+    for article in articles:
+        title_tag = article.find('a', class_='gsc_a_at')
+        title = title_tag.text.strip() if title_tag else 'Title not found'
+        
+        description_tag = article.find('span', class_='gsc_a_t_desc')
+        description = description_tag.text.strip() if description_tag else 'Description not found'
+        
+        print(f"Title: {title}")
+        print(f"Description: {description}")
+        print("-" * 20)
 
 
-@csrf_exempt
-def scholar_profiles(request):
-    if request.method == 'GET':
-        university = request.GET.get('ViewIt@CatholicU', '').strip()
-        if not university:
-            return JsonResponse({'error': 'University query parameter is required.'}, status=400)
-        limit = int(request.GET.get('limit', 5))
-        authors = search_authors_by_affiliation(university, limit=limit)
-        results = []
-        for author in authors:
-            name = author.get("name")
-            affils = author.get("affiliations", [])
-            papers_count = author.get("paperCount")
-            hindex = author.get("hIndex")
-            profile_url = author.get("url")
-            author_id = author.get("authorId")
-            # Fetch latest papers
-            latest_pubs = get_latest_papers(author_id, limit=3)
-            pubs = []
-            for pub in latest_pubs:
-                pubs.append({
-                    'title': pub.get('title'),
-                    'year': pub.get('year'),
-                    'venue': pub.get('venue'),
-                    'url': pub.get('url'),
-                })
-            results.append({
-                'name': name,
-                'affiliations': affils,
-                'paperCount': papers_count,
-                'hIndex': hindex,
-                'profile_url': profile_url,
-                'papers': pubs
-            })
-        return JsonResponse({'results': results})
-    return JsonResponse({'error': 'Invalid request'}, status=400)
+##########################################################

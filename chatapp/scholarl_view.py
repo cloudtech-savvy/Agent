@@ -93,3 +93,172 @@ def scholar_profiles(request):
     return JsonResponse({'results': results})
 
 # --------------- # End of Google Scholar scraping-------------
+# --------------- # For Semantic Scholar API -------------
+
+#####################################################################
+
+#try google  scholarly
+
+# Configure logging to capture raw HTML responses
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Replace the `search_authors_by_affiliation` function to use `scholarly`
+def search_authors_by_affiliation(affiliation, limit=10):
+    search_query = scholarly.search_author(affiliation)
+    authors = []
+    for author in search_query:
+        try:
+            # Log the raw HTML response for debugging
+            logger.info(f"Raw HTML response for author: {author}")
+            authors.append(author)
+            if len(authors) >= limit:
+                break
+        except Exception as e:
+            logger.error(f"Error while processing author: {str(e)}")
+    return authors
+
+
+def get_latest_papers(author, limit=5):
+    author_filled = scholarly.fill(author)
+    papers = []
+    for pub in author_filled.get('publications', []):
+        pub_info = pub.get('bib', {})
+        papers.append({
+            'title': pub_info.get('title', 'N/A'),
+            'year': pub_info.get('pub_year', 'N/A'),
+            'venue': pub_info.get('venue', 'N/A'),
+            'url': pub_info.get('url', 'N/A'),
+        })
+        if len(papers) >= limit:
+            break
+    return papers
+
+
+@csrf_exempt
+def scholar_profiles(request):
+    if request.method == 'GET':
+        university = request.GET.get('university', '').strip() or request.GET.get('ViewIt@CatholicU', '').strip()
+        if not university:
+            return JsonResponse({'error': 'University query parameter is required.'}, status=400)
+
+        # Log the received parameters for debugging
+        logger.info(f"Received parameters: {request.GET}")
+
+        # Use Semantic Scholar to fetch profiles
+        authors = search_authors_by_affiliation_semantic_scholar(university, limit=5)
+        if not authors:
+            return JsonResponse({'error': 'No profiles found for the given university.'}, status=404)
+
+        results = []
+        for author in authors:
+            results.append({
+                'name': author.get('name', 'N/A'),
+                'affiliations': author.get('affiliations', 'N/A'),
+                'paperCount': author.get('paperCount', 'N/A'),
+                'hIndex': author.get('hIndex', 'N/A'),
+                'url': author.get('url', 'N/A')
+            })
+
+        return JsonResponse({'profiles': results})
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+@csrf_exempt
+def scholar_profiles_csv(request):
+    if request.method == 'GET':
+        university = request.GET.get('ViewIt@CatholicU', '').strip()
+        if not university:
+            return JsonResponse({'error': 'University query parameter is required.'}, status=400)
+        # Search for authors by university
+        search_query = scholarly.search_author(university)
+        authors_found = list(search_query)
+        if not authors_found:
+            return JsonResponse({'error': 'No authors found for the given university.'}, status=404)
+        
+        # Prepare CSV response
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{university}_scholar_data.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['Profile Name', 'Affiliation', 'Interests', 'Scholar ID', 'Email Domain', 'Paper Title', 'Citations', 'Abstract', 'Venue', 'Paper Description'])
+        for author in authors_found:
+            try:
+                author_filled = scholarly.fill(author)
+                profile_name = author_filled.get('name', 'N/A')
+                affiliation = author_filled.get('affiliation', 'N/A')
+                interests = ', '.join(author_filled.get('interests', []))
+                scholar_id = author_filled.get('scholar_id', 'N/A')
+                email_domain = author_filled.get('email_domain', 'N/A')
+                for pub in author_filled.get('publications', []):
+                    pub_info = pub.get('bib', {})
+                    title = pub_info.get('title', 'N/A')
+                    citations = pub.get('num_citations', 0)
+                    abstract = pub_info.get('abstract', 'N/A')
+                    venue = pub_info.get('venue', 'N/A')
+                    description = pub_info.get('abstract', 'N/A') 
+                    writer.writerow([
+                        profile_name,
+                        affiliation,
+                        interests,
+                        scholar_id,
+                        email_domain,
+                        title,
+                        citations,
+                        abstract,
+                        venue,
+                        description
+                    ])
+            except Exception as e:
+                continue
+        return response
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+#try semantic scholar api
+# Configure logging to capture raw HTML responses
+
+def search_authors_by_affiliation_semantic_scholar(affiliation, limit=20):
+    url = f"https://api.semanticscholar.org/graph/v1/author/search?query={affiliation}&limit={limit}&fields=name,affiliations,paperCount,hIndex,url"
+    response = requests.get(url)
+    if response.status_code != 200:
+        logger.error(f"Semantic Scholar API error: {response.status_code}")
+        return []
+    data = response.json()
+    return data.get("data", [])
+
+@csrf_exempt
+def scholar_profiles_with_fallback(request):
+    if request.method == 'GET':
+        # Handle both `university` and `ViewIt@CatholicU` parameters
+        university = request.GET.get('university', '').strip() or request.GET.get('ViewIt@CatholicU', '').strip()
+        if not university:
+            return JsonResponse({'error': 'University query parameter is required.'}, status=400)
+
+        # Log the received parameters for debugging
+        logger.info(f"Received parameters: {request.GET}")
+
+        # Try Google Scholar first
+        authors = search_authors_by_affiliation(university, limit=5)
+        if not authors:
+            logger.warning("Google Scholar returned no results. Falling back to Semantic Scholar.")
+
+            # Fallback to Semantic Scholar
+            authors = search_authors_by_affiliation_semantic_scholar(university, limit=10)
+
+        if not authors:
+            return JsonResponse({'error': 'No authors found for the given university.'}, status=404)
+
+        results = []
+        for author in authors:
+            results.append({
+                'name': author.get('name', 'N/A'),
+                'affiliations': author.get('affiliations', 'N/A'),
+                'paperCount': author.get('paperCount', 'N/A'),
+                'hIndex': author.get('hIndex', 'N/A'),
+                'url': author.get('url', 'N/A')
+            })  
+
+        return JsonResponse({'results': results})
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+
+######################################################################
