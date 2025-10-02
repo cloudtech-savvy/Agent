@@ -85,25 +85,23 @@ try:
     # Use BeautifulSoup to parse the HTML content
     soup = BeautifulSoup(response.text, 'html.parser')
 
-    # Example parsing: Find all researcher profiles on the page
-    # The structure might change, so this is an example
-    profile_sections = soup.find_all('div', class_='gs_scl')
+    # Updated selector for researcher profiles
+    profile_sections = soup.find_all('div', class_='gs_r')  # Hypothetical new class
 
     if not profile_sections:
         print("No researcher profiles found. The selector might have changed.")
 
     for profile in profile_sections:
         # Extract the researcher's name
-        name_tag = profile.find('h3', class_='gs_ai_name')
+        name_tag = profile.find('h3', class_='gs_rt')  # Hypothetical new class for names
         name = name_tag.text.strip() if name_tag else 'Name not found'
 
         # Extract the researcher's affiliation
-        affiliation_tag = profile.find('div', class_='gs_ai_aff')
+        affiliation_tag = profile.find('div', class_='gs_a')  # Hypothetical new class for affiliations
         affiliation = affiliation_tag.text.strip() if affiliation_tag else 'Affiliation not found'
-        
+
         # Extract paper descriptions (you may need to get the user profile for full details)
-        # This is an example of scraping paper snippets from the search results
-        paper_snippets = profile.find_all('div', class_='gs_a')
+        paper_snippets = profile.find_all('div', class_='gs_rs')  # Hypothetical new class for paper snippets
         paper_desc = [s.text.strip() for s in paper_snippets] if paper_snippets else ['No paper snippets found']
 
         print(f"Researcher: {name}")
@@ -119,6 +117,7 @@ except requests.exceptions.RequestException as e:
 
 # Assuming you have the URL for a specific researcher's profile
 # You would get this URL by parsing the initial search result
+
 researcher_id = 'INSERT_RESEARCHER_ID_HERE'  # Replace with actual ID
 profile_url = f'https://scholar.google.com/citations?user={researcher_id}'
 
@@ -145,3 +144,36 @@ if profile_response.status_code == 200:
 
 
 ##########################################################
+def scrape_google_scholar(request):
+    if request.method == 'GET':
+        try:
+            search_query = "Catholic University of America"
+            search_url = f'https://scholar.google.com/scholar?q=mauthors:%22{search_query.replace(" ", "+")}%22'
+            response = requests.get(search_url)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+            profiles = soup.find_all('div', class_='gs_r gs_or gs_scl')
+
+            researchers = []
+            for profile in profiles:
+                name_tag = profile.find('h3', class_='gs_rt')
+                name = name_tag.text if name_tag else 'N/A'
+
+                affiliation_tag = profile.find('div', class_='gs_a')
+                affiliation = affiliation_tag.text if affiliation_tag else 'N/A'
+
+                paper_tags = profile.find_all('div', class_='gs_rs')
+                papers = [paper.text for paper in paper_tags]
+
+                researchers.append({
+                    'name': name,
+                    'affiliation': affiliation,
+                    'papers': papers
+                })
+
+            return JsonResponse({'researchers': researchers})
+        except Exception as e:
+            logging.error(f"Error scraping Google Scholar: {e}")
+            return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse({'error': 'Invalid request'}, status=400)
